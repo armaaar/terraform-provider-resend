@@ -256,8 +256,21 @@ func capabilitiesToObject(c *resendx.Capabilities) (types.Object, diag.Diagnosti
 // applyExtState merges the resendx-supplied fields (capabilities + tls) into
 // the model. Failure to fetch leaves the existing values intact and surfaces
 // a warning rather than blocking the apply — these are read-only enrichments.
+//
+// Defaults Unknown -> null up front so even when resendx fails or Resend
+// returns no value (a fresh domain has no TLS policy), the state is always
+// "known". Without this, an Optional+Computed field whose plan value is
+// Unknown would still be Unknown after apply and the framework rejects it.
 func (r *DomainResource) applyExtState(ctx context.Context, data *DomainResourceModel) diag.Diagnostics {
 	var diags diag.Diagnostics
+
+	if data.Tls.IsUnknown() {
+		data.Tls = types.StringNull()
+	}
+	if data.Capabilities.IsUnknown() {
+		data.Capabilities = types.ObjectNull(capabilitiesAttrTypes())
+	}
+
 	ext, err := r.ext.GetDomain(ctx, data.Id.ValueString())
 	if err != nil {
 		diags.AddWarning(
