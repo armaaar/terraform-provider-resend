@@ -27,9 +27,13 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 	"resend": providerserver.NewProtocol6WithError(New("test")()),
 }
 
-func TestAccPreCheck(t *testing.T) {
-	// You can add code here to run prior to any test case execution, for example assertions
-	// about the appropriate environment variables being set are common to see in a pre-check
-	// function.
+// testAccPreCheck is intended to be passed as the PreCheck callback on a
+// resource.TestCase so acceptance tests fail fast when the API key is not set.
+// It is intentionally lowercase so `go test ./...` does not auto-discover it
+// as a test (the prior name TestAccPreCheck made `go test` fail without a
+// real key).
+//
+//nolint:unused // wired into resource.TestCase{PreCheck:} in the acceptance test phase
+func testAccPreCheck(t *testing.T) {
 	require.NotEmpty(t, os.Getenv("RESEND_API_KEY"))
 }

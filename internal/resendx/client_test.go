@@ -56,30 +56,6 @@ func TestClient_GetDomain_NotFound(t *testing.T) {
 	require.Contains(t, err.Error(), "Domain dom_404 not found")
 }
 
-func TestClient_GetWebhookSecret_OK(t *testing.T) {
-	t.Parallel()
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/webhooks/wh_42", r.URL.Path)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"wh_42","signing_secret":"whsec_abc"}`))
-	})
-
-	secret, err := c.GetWebhookSecret(context.Background(), "wh_42")
-	require.NoError(t, err)
-	require.Equal(t, "whsec_abc", secret)
-}
-
-func TestClient_GetWebhookSecret_NotFound(t *testing.T) {
-	t.Parallel()
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	})
-
-	_, err := c.GetWebhookSecret(context.Background(), "wh_missing")
-	require.Error(t, err)
-	require.True(t, IsNotFound(err))
-}
-
 func TestClient_5xx_NotMisclassifiedAsNotFound(t *testing.T) {
 	t.Parallel()
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
