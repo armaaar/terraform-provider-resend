@@ -1,0 +1,52 @@
+# Acceptance tests against the live Resend API. Manual-trigger only — these
+# create real domains/api-keys/webhooks at Resend and burn API quota every
+# retry.
+#
+# Required repo secrets:
+#   - RESEND_API_KEY            — Resend API key (full_access) for the test account
+#   - RESEND_TEST_BASE_DOMAIN   — base domain under which random subdomains are created
+#
+# Optional secrets / inputs:
+#   - RESEND_TEST_AP_REGION     — set to "1" via the workflow input to enable the
+#                                 ap-northeast-1 region test (not all accounts have
+#                                 access to that region)
+name: Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      terraform_version:
+        description: 'Terraform CLI version to test against'
+        type: string
+        default: '1.12.*'
+      include_ap_region:
+        description: 'Include the ap-northeast-1 region test'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Acceptance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
+      - run: go mod download
+      - name: Run acceptance tests
+        env:
+          TF_ACC: '1'
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_TEST_BASE_DOMAIN: ${{ secrets.RESEND_TEST_BASE_DOMAIN }}
+          RESEND_TEST_AP_REGION: ${{ inputs.include_ap_region && '1' || '' }}
+        run: go test -v -timeout 30m -cover ./internal/provider/...
