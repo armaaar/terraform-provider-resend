@@ -2,8 +2,6 @@ module github.com/armaaar/terraform-provider-resend
 
 go 1.25.8
 
-toolchain go1.26.2
-
 require (
 	github.com/hashicorp/terraform-plugin-docs v0.25.0
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
