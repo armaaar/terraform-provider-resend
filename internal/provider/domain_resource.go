@@ -8,6 +8,8 @@ import (
 	"fmt"
 
 	"github.com/armaaar/terraform-provider-resend/internal/resendx"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -31,7 +33,7 @@ type DomainResource struct {
 	ext    *resendx.Client
 }
 
-type Record struct {
+type record struct {
 	Record   types.String `tfsdk:"record"`
 	Name     types.String `tfsdk:"name"`
 	Type     types.String `tfsdk:"type"`
@@ -49,7 +51,7 @@ type DomainResourceModel struct {
 	CreatedAt   types.String `tfsdk:"created_at"`
 	Status      types.String `tfsdk:"status"`
 	DnsProvider types.String `tfsdk:"dns_provider"`
-	// Records     basetypes.ListValue `tfsdk:"records"`
+	Records     types.List   `tfsdk:"records"`
 }
 
 func (r *DomainResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -92,47 +94,81 @@ func (r *DomainResource) Schema(ctx context.Context, req resource.SchemaRequest,
 				MarkdownDescription: "The DNS provider used to configure the domain.",
 				Computed:            true,
 			},
-
-			// "records": schema.ListNestedAttribute{
-			// 		MarkdownDescription: "The DNS records used to configure the domain.",
-			// Computed: true,
-			// Optional: true,
-			// 		NestedObject: schema.NestedAttributeObject{
-			// 			Attributes: map[string]schema.Attribute{
-			// 				"record": schema.StringAttribute{
-			// 					MarkdownDescription: "The Record Type.",
-			// 					Computed:            true,
-			// 				},
-			// 				"name": schema.StringAttribute{
-			// 					MarkdownDescription: "The name of the record.",
-			// 					Computed:            true,
-			// 				},
-			// 				"type": schema.StringAttribute{
-			// 					MarkdownDescription: "The type of the record.",
-			// 					Computed:            true,
-			// 				},
-			// 				"ttl": schema.StringAttribute{
-			// 					MarkdownDescription: "The TTL of the record.",
-			// 					Computed:            true,
-			// 				},
-			// 				"status": schema.StringAttribute{
-			// 					MarkdownDescription: "The status of the record.",
-			// 					Computed:            true,
-			// 				},
-			// 				"value": schema.StringAttribute{
-			// 					MarkdownDescription: "The value of the record.",
-			// 					Computed:            true,
-			// 				},
-			// 				"priority": schema.NumberAttribute{
-			// 					MarkdownDescription: "The priority of the record.",
-			// 					Computed:            true,
-			// 					Optional:            true,
-			// 				},
-			// 			},
-			// 		},
-			// },
+			"records": schema.ListNestedAttribute{
+				MarkdownDescription: "DNS records that must exist at the domain's DNS provider for Resend to verify and send through this domain. Pipe these straight into `cloudflare_record` (or your DNS provider of choice) with `for_each`.",
+				Computed:            true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"record": schema.StringAttribute{
+							MarkdownDescription: "Resend's record class — one of `SPF`, `DKIM`, `Tracking`, `TrackingCAA`.",
+							Computed:            true,
+						},
+						"name": schema.StringAttribute{
+							MarkdownDescription: "The hostname.",
+							Computed:            true,
+						},
+						"type": schema.StringAttribute{
+							MarkdownDescription: "The DNS record type (e.g. `MX`, `TXT`, `CNAME`).",
+							Computed:            true,
+						},
+						"ttl": schema.StringAttribute{
+							MarkdownDescription: "The TTL.",
+							Computed:            true,
+						},
+						"status": schema.StringAttribute{
+							MarkdownDescription: "The verification status of this record at Resend's last check.",
+							Computed:            true,
+						},
+						"value": schema.StringAttribute{
+							MarkdownDescription: "The record value.",
+							Computed:            true,
+						},
+						"priority": schema.Int64Attribute{
+							MarkdownDescription: "Priority for MX records; null for record types without a priority.",
+							Computed:            true,
+						},
+					},
+				},
+			},
 		},
 	}
+}
+
+// recordObjectType is the Terraform type backing a single records[] element.
+func recordObjectType() types.ObjectType {
+	return types.ObjectType{AttrTypes: map[string]attr.Type{
+		"record":   types.StringType,
+		"name":     types.StringType,
+		"type":     types.StringType,
+		"ttl":      types.StringType,
+		"status":   types.StringType,
+		"value":    types.StringType,
+		"priority": types.Int64Type,
+	}}
+}
+
+// recordsToList converts the SDK's []resend.Record into a Terraform list value.
+// nil/empty input produces an empty list (not null) so plans don't churn.
+func recordsToList(ctx context.Context, recs []resend.Record) (types.List, diag.Diagnostics) {
+	models := make([]record, 0, len(recs))
+	for _, r := range recs {
+		m := record{
+			Record:   types.StringValue(r.Record),
+			Name:     types.StringValue(r.Name),
+			Type:     types.StringValue(r.Type),
+			Ttl:      types.StringValue(r.Ttl),
+			Status:   types.StringValue(r.Status),
+			Value:    types.StringValue(r.Value),
+			Priority: types.Int64Null(),
+		}
+		if r.Priority != "" {
+			if p, err := r.Priority.Int64(); err == nil {
+				m.Priority = types.Int64Value(p)
+			}
+		}
+		models = append(models, m)
+	}
+	return types.ListValueFrom(ctx, recordObjectType(), models)
 }
 
 func (r *DomainResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -179,26 +215,14 @@ func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest,
 	data.Status = types.StringValue(domain.Status)
 	data.DnsProvider = types.StringValue(domain.DnsProvider)
 	data.Region = types.StringValue(domain.Region)
-	data.Status = types.StringValue(domain.Status)
-	// data.Records = basetypes.ListValue{}
 
-	// for i, r := range domain.Records {
-	// 	data.Records[i] = record{
-	// 		Record: types.StringValue(r.Record),
-	// 		Name:   types.StringValue(r.Name),
-	// 		Type:   types.StringValue(r.Type),
-	// 		Ttl:    types.StringValue(r.Ttl),
-	// 		Status: types.StringValue(r.Status),
-	// 		Value:  types.StringValue(r.Value),
-	// 	}
-	// 	p, err := r.Priority.Int64()
-	// 	if err == nil {
-	// 		// I guess we can ignore this?
-	// 		data.Records[i].Priority = types.Int64Value(p)
-	// 	}
-	// }
+	recs, recsDiags := recordsToList(ctx, domain.Records)
+	resp.Diagnostics.Append(recsDiags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.Records = recs
 
-	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -222,7 +246,13 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 	data.CreatedAt = types.StringValue(domain.CreatedAt)
 	data.Status = types.StringValue(domain.Status)
 
-	// Save updated data into Terraform state
+	recs, recsDiags := recordsToList(ctx, domain.Records)
+	resp.Diagnostics.Append(recsDiags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.Records = recs
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 

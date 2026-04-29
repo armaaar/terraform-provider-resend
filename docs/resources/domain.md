@@ -28,4 +28,18 @@ Add a new Domain.
 - `created_at` (String) The date and time the domain was created
 - `dns_provider` (String) The DNS provider used to configure the domain.
 - `id` (String) The unique identifier of the domain within Resend.
+- `records` (Attributes List) DNS records that must exist at the domain's DNS provider for Resend to verify and send through this domain. Pipe these straight into `cloudflare_record` (or your DNS provider of choice) with `for_each`. (see [below for nested schema](#nestedatt--records))
 - `status` (String) The status of the domain. TODO: find out possible values
+
+<a id="nestedatt--records"></a>
+### Nested Schema for `records`
+
+Read-Only:
+
+- `name` (String) The hostname.
+- `priority` (Number) Priority for MX records; null for record types without a priority.
+- `record` (String) Resend's record class — one of `SPF`, `DKIM`, `Tracking`, `TrackingCAA`.
+- `status` (String) The verification status of this record at Resend's last check.
+- `ttl` (String) The TTL.
+- `type` (String) The DNS record type (e.g. `MX`, `TXT`, `CNAME`).
+- `value` (String) The record value.
