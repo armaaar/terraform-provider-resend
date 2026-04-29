@@ -407,33 +407,53 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 }
 
 func (r *DomainResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data DomainResourceModel
+	var plan, state DomainResourceModel
 
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Build the update request. Use SetOpenTracking/SetClickTracking so the
-	// SDK's MarshalJSON sends false explicitly when the user asks for it; the
-	// struct's omitempty would otherwise drop a false value.
+	// Only include fields that actually changed in the PATCH body. Resend
+	// rate-limits some fields (tracking_subdomain is capped at 5 changes per
+	// 24h) and treats any presence of the field as a change attempt — even if
+	// the value matches. Use SetOpenTracking/SetClickTracking for the booleans
+	// so the SDK's MarshalJSON sends explicit false values; the struct's
+	// omitempty would otherwise drop a false value.
 	updateReq := &resend.UpdateDomainRequest{}
-	if !data.OpenTracking.IsNull() && !data.OpenTracking.IsUnknown() {
-		updateReq.SetOpenTracking(data.OpenTracking.ValueBool())
+	changed := false
+	if !plan.OpenTracking.Equal(state.OpenTracking) {
+		changed = true
+		if !plan.OpenTracking.IsNull() && !plan.OpenTracking.IsUnknown() {
+			updateReq.SetOpenTracking(plan.OpenTracking.ValueBool())
+		}
 	}
-	if !data.ClickTracking.IsNull() && !data.ClickTracking.IsUnknown() {
-		updateReq.SetClickTracking(data.ClickTracking.ValueBool())
+	if !plan.ClickTracking.Equal(state.ClickTracking) {
+		changed = true
+		if !plan.ClickTracking.IsNull() && !plan.ClickTracking.IsUnknown() {
+			updateReq.SetClickTracking(plan.ClickTracking.ValueBool())
+		}
 	}
-	if !data.TrackingSubdomain.IsNull() && !data.TrackingSubdomain.IsUnknown() {
-		updateReq.TrackingSubdomain = data.TrackingSubdomain.ValueString()
+	if !plan.TrackingSubdomain.Equal(state.TrackingSubdomain) {
+		changed = true
+		if !plan.TrackingSubdomain.IsNull() && !plan.TrackingSubdomain.IsUnknown() {
+			updateReq.TrackingSubdomain = plan.TrackingSubdomain.ValueString()
+		}
 	}
-	if !data.Tls.IsNull() && !data.Tls.IsUnknown() {
-		updateReq.Tls = data.Tls.ValueString()
+	if !plan.Tls.Equal(state.Tls) {
+		changed = true
+		if !plan.Tls.IsNull() && !plan.Tls.IsUnknown() {
+			updateReq.Tls = plan.Tls.ValueString()
+		}
 	}
 
-	if _, err := r.client.Domains.UpdateWithContext(ctx, data.Id.ValueString(), updateReq); err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update domain, got error: %s", err))
-		return
+	data := plan
+	if changed {
+		if _, err := r.client.Domains.UpdateWithContext(ctx, plan.Id.ValueString(), updateReq); err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update domain, got error: %s", err))
+			return
+		}
 	}
 
 	// Resend's PATCH response only echoes {object, id}; re-Get to refresh the
