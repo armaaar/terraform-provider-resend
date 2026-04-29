@@ -5,8 +5,6 @@ package provider
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"os"
 
 	"github.com/armaaar/terraform-provider-resend/internal/resendx"
@@ -53,8 +51,8 @@ func (p *ResendProvider) Schema(ctx context.Context, req provider.SchemaRequest,
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			"api_key": schema.StringAttribute{
-				MarkdownDescription: "A resend API key",
-				Required:            true,
+				MarkdownDescription: "A Resend API key. May also be supplied via the `RESEND_API_KEY` environment variable; the config value takes precedence when both are set.",
+				Optional:            true,
 				Sensitive:           true,
 			},
 		},
@@ -81,7 +79,6 @@ func (p *ResendProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	log.Println(os.Environ())
 
 	apiKey := os.Getenv("RESEND_API_KEY")
 	if !config.ApiKey.IsNull() {
@@ -99,10 +96,10 @@ func (p *ResendProvider) Configure(ctx context.Context, req provider.ConfigureRe
 
 		return
 	}
-	tflog.Info(ctx, fmt.Sprintf("Creating Resend API client %s", apiKey))
+	tflog.Info(ctx, "Creating Resend API client")
 	clients := &providerClients{
-		sdk: resend.NewClient(config.ApiKey.ValueString()),
-		ext: resendx.New(config.ApiKey.ValueString(), p.version),
+		sdk: resend.NewClient(apiKey),
+		ext: resendx.New(apiKey, p.version),
 	}
 	resp.DataSourceData = clients
 	resp.ResourceData = clients
