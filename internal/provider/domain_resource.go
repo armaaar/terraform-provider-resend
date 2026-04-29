@@ -333,16 +333,28 @@ func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest,
 		createReq.ClickTracking = &v
 	}
 
-	domain, err := r.client.Domains.CreateWithContext(ctx, createReq)
+	created, err := r.client.Domains.CreateWithContext(ctx, createReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create domain, got error: %s", err))
 		return
 	}
 
-	data.Id = types.StringValue(domain.Id)
+	// Re-read via Get instead of trusting CreateDomainResponse: the SDK's
+	// CreateDomainResponse declares camelCase JSON tags (createdAt,
+	// dnsProvider) which don't match Resend's actual snake_case payload, so
+	// fields like CreatedAt decode as empty strings. The Domain struct that
+	// Get returns has the correct tags.
+	data.Id = types.StringValue(created.Id)
+	domain, err := r.client.Domains.GetWithContext(ctx, created.Id)
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read domain after create, got error: %s", err))
+		return
+	}
+
+	data.Name = types.StringValue(domain.Name)
+	data.Region = types.StringValue(domain.Region)
 	data.CreatedAt = types.StringValue(domain.CreatedAt)
 	data.Status = types.StringValue(domain.Status)
-	data.Region = types.StringValue(domain.Region)
 	data.OpenTracking = types.BoolValue(domain.OpenTracking)
 	data.ClickTracking = types.BoolValue(domain.ClickTracking)
 	data.TrackingSubdomain = types.StringValue(domain.TrackingSubdomain)
