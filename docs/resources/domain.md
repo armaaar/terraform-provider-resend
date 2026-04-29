@@ -3,12 +3,12 @@
 page_title: "resend_domain Resource - terraform-provider-resend"
 subcategory: ""
 description: |-
-  Add a new Domain.
+  Manages a Resend sending domain. The records attribute is the practical reason this resource exists — pipe it into your DNS provider's record resource (e.g. cloudflare_record) to verify the domain.
 ---
 
 # resend_domain (Resource)
 
-Add a new Domain.
+Manages a Resend sending domain. The `records` attribute is the practical reason this resource exists — pipe it into your DNS provider's record resource (e.g. `cloudflare_record`) to verify the domain.
 
 
 
@@ -17,19 +17,33 @@ Add a new Domain.
 
 ### Required
 
-- `name` (String) The name of the domain you want to create
+- `name` (String) The fully-qualified domain name. Immutable.
 
 ### Optional
 
-- `region` (String) The region where emails will be sent from. Possible values: `us-east-1` | `eu-west-1` | `sa-east-1`
+- `click_tracking` (Boolean) Whether Resend should rewrite outbound links to track click events. Defaults to `false` server-side.
+- `custom_return_path` (String) Custom bounce subdomain (sets the `Return-Path` header). Settable only at create time — Resend's API does not return it on read, so changes here force replacement.
+- `open_tracking` (Boolean) Whether Resend should rewrite outbound links to track open events. Defaults to `false` server-side.
+- `region` (String) The region emails will be sent from. One of `us-east-1`, `eu-west-1`, `sa-east-1`, `ap-northeast-1`. Defaults to `us-east-1` server-side. Immutable.
+- `tls` (String) Outbound TLS policy. One of `enforced` (require TLS, drop on failure) or `opportunistic` (try TLS, fall back to plaintext).
+- `tracking_subdomain` (String) The subdomain Resend uses to host tracking pixels and click redirects. Must already be a subdomain of `name`.
 
 ### Read-Only
 
-- `created_at` (String) The date and time the domain was created
-- `dns_provider` (String) The DNS provider used to configure the domain.
+- `capabilities` (Attributes) Resend-determined capabilities of the domain. `sending` becomes `enabled` once the domain is verified; `receiving` becomes `enabled` when MX records resolve. (see [below for nested schema](#nestedatt--capabilities))
+- `created_at` (String) The date and time the domain was created at Resend.
 - `id` (String) The unique identifier of the domain within Resend.
 - `records` (Attributes List) DNS records that must exist at the domain's DNS provider for Resend to verify and send through this domain. Pipe these straight into `cloudflare_record` (or your DNS provider of choice) with `for_each`. (see [below for nested schema](#nestedatt--records))
-- `status` (String) The status of the domain. TODO: find out possible values
+- `status` (String) The verification status of the domain. One of `not_started`, `pending`, `verified`, `failed`, `partially_verified`, `partially_failed`.
+
+<a id="nestedatt--capabilities"></a>
+### Nested Schema for `capabilities`
+
+Read-Only:
+
+- `receiving` (String) Receiving capability — `enabled` or `disabled`.
+- `sending` (String) Sending capability — `enabled` or `disabled`.
+
 
 <a id="nestedatt--records"></a>
 ### Nested Schema for `records`

@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -45,13 +46,18 @@ type record struct {
 
 // DomainResourceModel describes the resource data model.
 type DomainResourceModel struct {
-	Id          types.String `tfsdk:"id"`
-	Name        types.String `tfsdk:"name"`
-	Region      types.String `tfsdk:"region"`
-	CreatedAt   types.String `tfsdk:"created_at"`
-	Status      types.String `tfsdk:"status"`
-	DnsProvider types.String `tfsdk:"dns_provider"`
-	Records     types.List   `tfsdk:"records"`
+	Id                types.String `tfsdk:"id"`
+	Name              types.String `tfsdk:"name"`
+	Region            types.String `tfsdk:"region"`
+	CreatedAt         types.String `tfsdk:"created_at"`
+	Status            types.String `tfsdk:"status"`
+	OpenTracking      types.Bool   `tfsdk:"open_tracking"`
+	ClickTracking     types.Bool   `tfsdk:"click_tracking"`
+	TrackingSubdomain types.String `tfsdk:"tracking_subdomain"`
+	Tls               types.String `tfsdk:"tls"`
+	CustomReturnPath  types.String `tfsdk:"custom_return_path"`
+	Capabilities      types.Object `tfsdk:"capabilities"`
+	Records           types.List   `tfsdk:"records"`
 }
 
 func (r *DomainResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -60,39 +66,95 @@ func (r *DomainResource) Metadata(ctx context.Context, req resource.MetadataRequ
 
 func (r *DomainResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Add a new Domain.",
+		MarkdownDescription: "Manages a Resend sending domain. The `records` attribute is the practical reason this resource exists — pipe it into your DNS provider's record resource (e.g. `cloudflare_record`) to verify the domain.",
 
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "The unique identifier of the domain within Resend.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"name": schema.StringAttribute{
-				MarkdownDescription: "The name of the domain you want to create",
+				MarkdownDescription: "The fully-qualified domain name. Immutable.",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"region": schema.StringAttribute{
-				MarkdownDescription: "The region where emails will be sent from. Possible values: `us-east-1` | `eu-west-1` | `sa-east-1`",
+				MarkdownDescription: "The region emails will be sent from. One of `us-east-1`, `eu-west-1`, `sa-east-1`, `ap-northeast-1`. Defaults to `us-east-1` server-side. Immutable.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"created_at": schema.StringAttribute{
+				MarkdownDescription: "The date and time the domain was created at Resend.",
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"status": schema.StringAttribute{
+				MarkdownDescription: "The verification status of the domain. One of `not_started`, `pending`, `verified`, `failed`, `partially_verified`, `partially_failed`.",
+				Computed:            true,
+			},
+			"open_tracking": schema.BoolAttribute{
+				MarkdownDescription: "Whether Resend should rewrite outbound links to track open events. Defaults to `false` server-side.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"click_tracking": schema.BoolAttribute{
+				MarkdownDescription: "Whether Resend should rewrite outbound links to track click events. Defaults to `false` server-side.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"tracking_subdomain": schema.StringAttribute{
+				MarkdownDescription: "The subdomain Resend uses to host tracking pixels and click redirects. Must already be a subdomain of `name`.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"tls": schema.StringAttribute{
+				MarkdownDescription: "Outbound TLS policy. One of `enforced` (require TLS, drop on failure) or `opportunistic` (try TLS, fall back to plaintext).",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"custom_return_path": schema.StringAttribute{
+				MarkdownDescription: "Custom bounce subdomain (sets the `Return-Path` header). Settable only at create time — Resend's API does not return it on read, so changes here force replacement.",
 				Optional:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
-			"created_at": schema.StringAttribute{
-				MarkdownDescription: "The date and time the domain was created",
+			"capabilities": schema.SingleNestedAttribute{
+				MarkdownDescription: "Resend-determined capabilities of the domain. `sending` becomes `enabled` once the domain is verified; `receiving` becomes `enabled` when MX records resolve.",
 				Computed:            true,
-			},
-			"status": schema.StringAttribute{
-				MarkdownDescription: "The status of the domain. TODO: find out possible values",
-				Computed:            true,
-			},
-			"dns_provider": schema.StringAttribute{
-				MarkdownDescription: "The DNS provider used to configure the domain.",
-				Computed:            true,
+				Attributes: map[string]schema.Attribute{
+					"sending": schema.StringAttribute{
+						MarkdownDescription: "Sending capability — `enabled` or `disabled`.",
+						Computed:            true,
+					},
+					"receiving": schema.StringAttribute{
+						MarkdownDescription: "Receiving capability — `enabled` or `disabled`.",
+						Computed:            true,
+					},
+				},
 			},
 			"records": schema.ListNestedAttribute{
 				MarkdownDescription: "DNS records that must exist at the domain's DNS provider for Resend to verify and send through this domain. Pipe these straight into `cloudflare_record` (or your DNS provider of choice) with `for_each`.",
@@ -171,20 +233,59 @@ func recordsToList(ctx context.Context, recs []resend.Record) (types.List, diag.
 	return types.ListValueFrom(ctx, recordObjectType(), models)
 }
 
+func capabilitiesAttrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"sending":   types.StringType,
+		"receiving": types.StringType,
+	}
+}
+
+// capabilitiesToObject converts the resendx capabilities into a Terraform
+// object value. A nil pointer (the API didn't return capabilities) yields a
+// null object so plans don't churn against unknown server state.
+func capabilitiesToObject(c *resendx.Capabilities) (types.Object, diag.Diagnostics) {
+	if c == nil {
+		return types.ObjectNull(capabilitiesAttrTypes()), nil
+	}
+	return types.ObjectValue(capabilitiesAttrTypes(), map[string]attr.Value{
+		"sending":   types.StringValue(c.Sending),
+		"receiving": types.StringValue(c.Receiving),
+	})
+}
+
+// applyExtState merges the resendx-supplied fields (capabilities + tls) into
+// the model. Failure to fetch leaves the existing values intact and surfaces
+// a warning rather than blocking the apply — these are read-only enrichments.
+func (r *DomainResource) applyExtState(ctx context.Context, data *DomainResourceModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	ext, err := r.ext.GetDomain(ctx, data.Id.ValueString())
+	if err != nil {
+		diags.AddWarning(
+			"Could not read supplemental domain fields",
+			fmt.Sprintf("Resend's REST API returned an error when fetching capabilities/tls for domain %s: %s. The provider will retain the previous values for these fields.", data.Id.ValueString(), err),
+		)
+		return diags
+	}
+	if ext.Tls != "" {
+		data.Tls = types.StringValue(ext.Tls)
+	}
+	caps, capsDiags := capabilitiesToObject(ext.Capabilities)
+	diags.Append(capsDiags...)
+	data.Capabilities = caps
+	return diags
+}
+
 func (r *DomainResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
 
 	clients, ok := req.ProviderData.(*providerClients)
-
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
 			fmt.Sprintf("Expected *providerClients, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
-
 		return
 	}
 
@@ -195,26 +296,43 @@ func (r *DomainResource) Configure(ctx context.Context, req resource.ConfigureRe
 func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data DomainResourceModel
 
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	domain, err := r.client.Domains.CreateWithContext(ctx, &resend.CreateDomainRequest{
+	createReq := &resend.CreateDomainRequest{
 		Name:   data.Name.ValueString(),
 		Region: data.Region.ValueString(),
-	})
+	}
+	if !data.CustomReturnPath.IsNull() && !data.CustomReturnPath.IsUnknown() {
+		createReq.CustomReturnPath = data.CustomReturnPath.ValueString()
+	}
+	if !data.TrackingSubdomain.IsNull() && !data.TrackingSubdomain.IsUnknown() {
+		createReq.TrackingSubdomain = data.TrackingSubdomain.ValueString()
+	}
+	if !data.OpenTracking.IsNull() && !data.OpenTracking.IsUnknown() {
+		v := data.OpenTracking.ValueBool()
+		createReq.OpenTracking = &v
+	}
+	if !data.ClickTracking.IsNull() && !data.ClickTracking.IsUnknown() {
+		v := data.ClickTracking.ValueBool()
+		createReq.ClickTracking = &v
+	}
+
+	domain, err := r.client.Domains.CreateWithContext(ctx, createReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create domain, got error: %s", err))
 		return
 	}
+
 	data.Id = types.StringValue(domain.Id)
 	data.CreatedAt = types.StringValue(domain.CreatedAt)
 	data.Status = types.StringValue(domain.Status)
-	data.DnsProvider = types.StringValue(domain.DnsProvider)
 	data.Region = types.StringValue(domain.Region)
+	data.OpenTracking = types.BoolValue(domain.OpenTracking)
+	data.ClickTracking = types.BoolValue(domain.ClickTracking)
+	data.TrackingSubdomain = types.StringValue(domain.TrackingSubdomain)
 
 	recs, recsDiags := recordsToList(ctx, domain.Records)
 	resp.Diagnostics.Append(recsDiags...)
@@ -223,15 +341,16 @@ func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 	data.Records = recs
 
+	// Pull capabilities and tls from the REST API — the SDK omits both.
+	resp.Diagnostics.Append(r.applyExtState(ctx, &data)...)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var data DomainResourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -241,10 +360,14 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read domain, got error: %s", err))
 		return
 	}
+
 	data.Name = types.StringValue(domain.Name)
 	data.Region = types.StringValue(domain.Region)
 	data.CreatedAt = types.StringValue(domain.CreatedAt)
 	data.Status = types.StringValue(domain.Status)
+	data.OpenTracking = types.BoolValue(domain.OpenTracking)
+	data.ClickTracking = types.BoolValue(domain.ClickTracking)
+	data.TrackingSubdomain = types.StringValue(domain.TrackingSubdomain)
 
 	recs, recsDiags := recordsToList(ctx, domain.Records)
 	resp.Diagnostics.Append(recsDiags...)
@@ -253,41 +376,80 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 	}
 	data.Records = recs
 
+	resp.Diagnostics.Append(r.applyExtState(ctx, &data)...)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *DomainResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data DomainResourceModel
 
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update domain, got error: %s", "not implemented"))
+	// Build the update request. Use SetOpenTracking/SetClickTracking so the
+	// SDK's MarshalJSON sends false explicitly when the user asks for it; the
+	// struct's omitempty would otherwise drop a false value.
+	updateReq := &resend.UpdateDomainRequest{}
+	if !data.OpenTracking.IsNull() && !data.OpenTracking.IsUnknown() {
+		updateReq.SetOpenTracking(data.OpenTracking.ValueBool())
+	}
+	if !data.ClickTracking.IsNull() && !data.ClickTracking.IsUnknown() {
+		updateReq.SetClickTracking(data.ClickTracking.ValueBool())
+	}
+	if !data.TrackingSubdomain.IsNull() && !data.TrackingSubdomain.IsUnknown() {
+		updateReq.TrackingSubdomain = data.TrackingSubdomain.ValueString()
+	}
+	if !data.Tls.IsNull() && !data.Tls.IsUnknown() {
+		updateReq.Tls = data.Tls.ValueString()
+	}
 
-	// Save updated data into Terraform state
+	if _, err := r.client.Domains.UpdateWithContext(ctx, data.Id.ValueString(), updateReq); err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update domain, got error: %s", err))
+		return
+	}
+
+	// Resend's PATCH response only echoes {object, id}; re-Get to refresh the
+	// rest of the state.
+	domain, err := r.client.Domains.GetWithContext(ctx, data.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read domain after update, got error: %s", err))
+		return
+	}
+	data.Name = types.StringValue(domain.Name)
+	data.Region = types.StringValue(domain.Region)
+	data.CreatedAt = types.StringValue(domain.CreatedAt)
+	data.Status = types.StringValue(domain.Status)
+	data.OpenTracking = types.BoolValue(domain.OpenTracking)
+	data.ClickTracking = types.BoolValue(domain.ClickTracking)
+	data.TrackingSubdomain = types.StringValue(domain.TrackingSubdomain)
+
+	recs, recsDiags := recordsToList(ctx, domain.Records)
+	resp.Diagnostics.Append(recsDiags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.Records = recs
+
+	resp.Diagnostics.Append(r.applyExtState(ctx, &data)...)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *DomainResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var data DomainResourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	_, err := r.client.Domains.RemoveWithContext(ctx, data.Id.ValueString())
-	if err != nil {
+	if _, err := r.client.Domains.RemoveWithContext(ctx, data.Id.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete domain, got error: %s", err))
 		return
 	}
-
 }
 
 func (r *DomainResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
