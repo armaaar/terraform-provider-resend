@@ -8,7 +8,7 @@ import (
 	"flag"
 	"log"
 
-	"github.com/chronark/terraform-provider-resend/internal/provider"
+	"github.com/armaaar/terraform-provider-resend/internal/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 )
 
@@ -38,8 +38,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		// TODO: Update this string with the published name of your provider.
-		Address: "registry.terraform.io/chronark/resend",
+		Address: "registry.terraform.io/armaaar/resend",
 		Debug:   debug,
 	}
 

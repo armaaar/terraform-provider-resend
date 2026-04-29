@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     resend = {
-      source = "registry.terraform.io/chronark/resend"
+      source = "registry.terraform.io/armaaar/resend"
     }
   }
 }
