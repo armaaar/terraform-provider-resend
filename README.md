@@ -1,64 +1,136 @@
-# Terraform Provider Scaffolding (Terraform Plugin Framework)
+# terraform-provider-resend
 
-_This template repository is built on the [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework). The template repository built on the [Terraform Plugin SDK](https://github.com/hashicorp/terraform-plugin-sdk) can be found at [terraform-provider-scaffolding](https://github.com/hashicorp/terraform-provider-scaffolding). See [Which SDK Should I Use?](https://developer.hashicorp.com/terraform/plugin/framework-benefits) in the Terraform documentation for additional information._
+Terraform provider for [Resend](https://resend.com) (transactional email). Manages sending domains, API keys and webhooks against Resend's REST API.
 
-This repository is a *template* for a [Terraform](https://www.terraform.io) provider. It is intended as a starting point for creating Terraform providers, containing:
-
-- A resource and a data source (`internal/provider/`),
-- Examples (`examples/`) and generated documentation (`docs/`),
-- Miscellaneous meta files.
-
-These files contain boilerplate code that you will need to edit to create your own Terraform provider. Tutorials for creating Terraform providers can be found on the [HashiCorp Developer](https://developer.hashicorp.com/terraform/tutorials/providers-plugin-framework) platform. _Terraform Plugin Framework specific guides are titled accordingly._
-
-Please see the [GitHub template repository documentation](https://help.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-from-a-template) for how to create a new repository from this template on GitHub.
-
-Once you've written your provider, you'll want to [publish it on the Terraform Registry](https://developer.hashicorp.com/terraform/registry/providers/publishing) so that others can use it.
+This is a fork of the original [chronark/terraform-provider-resend](https://github.com/chronark/terraform-provider-resend) — the original was tied to the renamed `resendlabs/resend-go` org, didn't expose `records` (so DNS could not be wired into Cloudflare et al.), and stubbed out `Update` and `Read`. This fork closes those gaps, tracks the latest `resend/resend-go/v3` SDK, and adds a `resend_webhook` resource. See [CHANGELOG.md](CHANGELOG.md) for the full diff.
 
 ## Requirements
 
-- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
-- [Go](https://golang.org/doc/install) >= 1.19
+- Terraform `>= 1.5`
+- Go `>= 1.25` (for development only)
+- A Resend API key (`re_…`)
 
-## Building The Provider
+## Installation
 
-1. Clone the repository
-1. Enter the repository directory
-1. Build the provider using the Go `install` command:
+### From the Terraform Registry
 
-```shell
-go install
+```hcl
+terraform {
+  required_providers {
+    resend = {
+      source  = "armaaar/resend"
+      version = "~> 1.0"
+    }
+  }
+}
 ```
 
-## Adding Dependencies
+### From a filesystem mirror (cee-app pattern)
 
-This provider uses [Go modules](https://github.com/golang/go/wiki/Modules).
-Please see the Go documentation for the most up to date information about using Go modules.
+For internal monorepos that prefer not to depend on the public Registry, drop the binary into the local mirror path Terraform auto-discovers:
 
-To add a new dependency `github.com/author/dependency` to your Terraform provider:
-
-```shell
-go get github.com/author/dependency
-go mod tidy
+```text
+~/.terraform.d/plugins/github.com/armaaar/resend/<version>/<os>_<arch>/terraform-provider-resend_v<version>
 ```
 
-Then commit the changes to `go.mod` and `go.sum`.
+Then declare the same `source` you used for the install path:
 
-## Using the provider
-
-Fill this in for each provider
-
-## Developing the Provider
-
-If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
-
-To compile the provider, run `go install`. This will build the provider and put the provider binary in the `$GOPATH/bin` directory.
-
-To generate or update documentation, run `go generate`.
-
-In order to run the full suite of Acceptance tests, run `make testacc`.
-
-*Note:* Acceptance tests create real resources, and often cost money to run.
-
-```shell
-make testacc
+```hcl
+terraform {
+  required_providers {
+    resend = {
+      source  = "github.com/armaaar/resend"
+      version = "1.0.0"
+    }
+  }
+}
 ```
+
+A small install script that downloads the right binary from a GitHub Release for the current OS/arch lives in cee-app at `infra/scripts/install-resend-provider.sh` and is also expected to run in CI before `terraform init`.
+
+## Authentication
+
+The provider needs a Resend API key. Either set it inline:
+
+```hcl
+provider "resend" {
+  api_key = var.resend_api_key
+}
+```
+
+…or via the `RESEND_API_KEY` environment variable. The config value takes precedence when both are set.
+
+## Resources
+
+### `resend_domain`
+
+Manages a Resend sending domain. The **`records` attribute is the practical reason this resource exists** — pipe it into your DNS provider with `for_each` to verify the domain.
+
+```hcl
+resource "resend_domain" "example_com" {
+  name               = "example.com"
+  region             = "us-east-1" # us-east-1 | eu-west-1 | sa-east-1 | ap-northeast-1
+  open_tracking      = true
+  click_tracking     = true
+  tracking_subdomain = "track"
+  tls                = "enforced" # enforced | opportunistic
+}
+
+resource "cloudflare_record" "resend" {
+  for_each = {
+    for r in resend_domain.example_com.records : "${r.record}-${r.name}" => r
+  }
+
+  zone_id  = var.cloudflare_zone_id
+  name     = each.value.name
+  type     = each.value.type
+  content  = each.value.value
+  priority = each.value.priority
+  ttl      = 1
+}
+```
+
+Caveats:
+
+- `custom_return_path` is settable on Create only. Resend's GET endpoint does not return it, so changes force replacement rather than pretending to drift-detect.
+- `tls`, `open_tracking`, `click_tracking`, `tracking_subdomain` round-trip via Read.
+- `capabilities.sending`/`receiving` come from a small in-tree HTTP supplement (`internal/resendx`) because the official SDK omits them.
+
+### `resend_api_key`
+
+Manages a Resend API key. Token is returned only on Create — losing it means recreating the key.
+
+```hcl
+resource "resend_api_key" "production_sender" {
+  name       = "production-sender"
+  permission = "sending_access" # full_access | sending_access
+  domain_id  = resend_domain.example_com.id
+}
+```
+
+`name`, `permission` and `domain_id` are all immutable; changing any of them forces replacement.
+
+### `resend_webhook`
+
+Manages a webhook subscription. Resend POSTs to `endpoint` for the listed `events`. The HMAC `signing_secret` is returned on Create and Read; treat it as sensitive credential material.
+
+```hcl
+resource "resend_webhook" "deliverability" {
+  endpoint = "https://hooks.example.com/resend"
+  events = [
+    "email.delivered",
+    "email.bounced",
+    "email.complained",
+  ]
+}
+```
+
+For the authoritative list of events see [Resend's webhook event types](https://resend.com/docs/dashboard/webhooks/event-types).
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local dev loop, lint/test conventions, and acceptance test setup.
+
+## License
+
+[MPL-2.0](LICENSE)

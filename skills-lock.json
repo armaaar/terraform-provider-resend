@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "golang-pro": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/golang-pro/SKILL.md",
+      "computedHash": "dc87ea17b2dff33b3833cf42d167876d2bd68170831e7c5062b739868b99ee2c"
+    },
+    "new-terraform-provider": {
+      "source": "hashicorp/agent-skills",
+      "sourceType": "github",
+      "skillPath": "terraform/provider-development/skills/new-terraform-provider/SKILL.md",
+      "computedHash": "542c383ff3c80c005e3e3eca1eb6393459872211aad236fb462c7e52c1577dd7"
+    },
+    "terraform-style-guide": {
+      "source": "hashicorp/agent-skills",
+      "sourceType": "github",
+      "skillPath": "terraform/code-generation/skills/terraform-style-guide/SKILL.md",
+      "computedHash": "08a999e2ddf01d83f3dc9775f5f8502e37f731e424f41840090ea53651e2ede7"
+    },
+    "terraform-test": {
+      "source": "hashicorp/agent-skills",
+      "sourceType": "github",
+      "skillPath": "terraform/code-generation/skills/terraform-test/SKILL.md",
+      "computedHash": "ff097a62725c55be6035987f0acf259140c9e122a13814ea86f453710b8a2145"
+    }
+  }
+}
