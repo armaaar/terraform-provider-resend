@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/resendlabs/resend-go"
+	"github.com/resend/resend-go/v3"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -163,7 +163,7 @@ func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	domain, err := r.client.Domains.Create(&resend.CreateDomainRequest{
+	domain, err := r.client.Domains.CreateWithContext(ctx, &resend.CreateDomainRequest{
 		Name:   data.Name.ValueString(),
 		Region: data.Region.ValueString(),
 	})
@@ -209,7 +209,7 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	domain, err := r.client.Domains.Get(data.Id.ValueString())
+	domain, err := r.client.Domains.GetWithContext(ctx, data.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read domain, got error: %s", err))
 		return
@@ -249,7 +249,7 @@ func (r *DomainResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	_, err := r.client.Domains.Remove(data.Id.ValueString())
+	_, err := r.client.Domains.RemoveWithContext(ctx, data.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete domain, got error: %s", err))
 		return

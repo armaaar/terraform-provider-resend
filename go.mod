@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-log v0.10.0
 	github.com/hashicorp/terraform-plugin-testing v1.16.0
-	github.com/resendlabs/resend-go v1.7.0
+	github.com/resend/resend-go/v3 v3.6.0
 	github.com/stretchr/testify v1.11.1
 )
 

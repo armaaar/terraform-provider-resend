@@ -16,7 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/resendlabs/resend-go"
+	"github.com/resend/resend-go/v3"
 )
 
 // Ensure ResendProvider satisfies various provider interfaces.

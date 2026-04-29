@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/resendlabs/resend-go"
+	"github.com/resend/resend-go/v3"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -115,7 +115,7 @@ func (r *ApiKeyResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	key, err := r.client.ApiKeys.Create(&resend.CreateApiKeyRequest{
+	key, err := r.client.ApiKeys.CreateWithContext(ctx, &resend.CreateApiKeyRequest{
 		Name:       data.Name.ValueString(),
 		Permission: data.Permission.ValueString(),
 		DomainId:   data.DomainId.ValueString(),
@@ -181,7 +181,7 @@ func (r *ApiKeyResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	_, err := r.client.ApiKeys.Remove(data.Id.ValueString())
+	_, err := r.client.ApiKeys.RemoveWithContext(ctx, data.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete key, got error: %s", err))
 		return
