@@ -138,15 +138,36 @@ func (r *ApiKeyResource) Create(ctx context.Context, req resource.CreateRequest,
 func (r *ApiKeyResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var data ApiKeyResourceModel
 
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Save updated data into Terraform state
-	//resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	// Resend exposes no GET /api-keys/:id; we paginate the list endpoint and
+	// match by id. The token is never re-readable so we leave it untouched.
+	id := data.Id.ValueString()
+	var cursor *string
+	for {
+		page, err := r.client.ApiKeys.ListWithOptions(ctx, &resend.ListOptions{After: cursor})
+		if err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to list api keys, got error: %s", err))
+			return
+		}
+		for i := range page.Data {
+			if page.Data[i].Id == id {
+				data.Name = types.StringValue(page.Data[i].Name)
+				resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+				return
+			}
+		}
+		if !page.HasMore || len(page.Data) == 0 {
+			// Drifted out of band — drop from state so the next plan recreates it.
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		last := page.Data[len(page.Data)-1].Id
+		cursor = &last
+	}
 }
 
 func (r *ApiKeyResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
