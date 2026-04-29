@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/armaaar/terraform-provider-resend/internal/resendx"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -18,6 +19,14 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/resend/resend-go/v3"
 )
+
+// providerClients bundles the SDK client with the resendx HTTP supplement
+// (for fields the SDK omits). Each resource type-asserts this struct in its
+// Configure method.
+type providerClients struct {
+	sdk *resend.Client
+	ext *resendx.Client
+}
 
 // Ensure ResendProvider satisfies various provider interfaces.
 var _ provider.Provider = &ResendProvider{}
@@ -91,9 +100,12 @@ func (p *ResendProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		return
 	}
 	tflog.Info(ctx, fmt.Sprintf("Creating Resend API client %s", apiKey))
-	client := resend.NewClient(config.ApiKey.ValueString())
-	resp.DataSourceData = client
-	resp.ResourceData = client
+	clients := &providerClients{
+		sdk: resend.NewClient(config.ApiKey.ValueString()),
+		ext: resendx.New(config.ApiKey.ValueString(), p.version),
+	}
+	resp.DataSourceData = clients
+	resp.ResourceData = clients
 }
 
 func (p *ResendProvider) Resources(ctx context.Context) []func() resource.Resource {

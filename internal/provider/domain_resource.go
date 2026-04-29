@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/armaaar/terraform-provider-resend/internal/resendx"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -27,6 +28,7 @@ func NewDomainResource() resource.Resource {
 // DomainResource defines the resource implementation.
 type DomainResource struct {
 	client *resend.Client
+	ext    *resendx.Client
 }
 
 type Record struct {
@@ -139,18 +141,19 @@ func (r *DomainResource) Configure(ctx context.Context, req resource.ConfigureRe
 		return
 	}
 
-	client, ok := req.ProviderData.(*resend.Client)
+	clients, ok := req.ProviderData.(*providerClients)
 
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *resend.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			fmt.Sprintf("Expected *providerClients, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 
 		return
 	}
 
-	r.client = client
+	r.client = clients.sdk
+	r.ext = clients.ext
 }
 
 func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
