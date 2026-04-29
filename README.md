@@ -127,6 +127,33 @@ resource "resend_webhook" "deliverability" {
 
 For the authoritative list of events see [Resend's webhook event types](https://resend.com/docs/dashboard/webhooks/event-types).
 
+## Data sources
+
+Every resource has matching data sources for read-only lookups against unmanaged Resend objects:
+
+| Data source | Lookup |
+|---|---|
+| `data.resend_domain` | by ID — full domain shape including `records`, `capabilities`, `tls` |
+| `data.resend_domains` | list every domain (no per-item records/capabilities/tls — use the singular for those) |
+| `data.resend_api_key` | by ID — name + timestamps (token never returned post-creation) |
+| `data.resend_api_keys` | list every API key |
+| `data.resend_webhook` | by ID — full webhook including `signing_secret` |
+| `data.resend_webhooks` | list every webhook (no `signing_secret` — use the singular for that) |
+
+```hcl
+# Read an existing webhook's signing secret without managing it.
+data "resend_webhook" "shared" {
+  id = "wh_abc123"
+}
+
+# Inventory: which API keys haven't been used?
+data "resend_api_keys" "all" {}
+
+output "stale_keys" {
+  value = [for k in data.resend_api_keys.all.api_keys : k.name if k.last_used_at == null]
+}
+```
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for local dev loop, lint/test conventions, and acceptance test setup.

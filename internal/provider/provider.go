@@ -114,7 +114,14 @@ func (p *ResendProvider) Resources(ctx context.Context) []func() resource.Resour
 }
 
 func (p *ResendProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		NewDomainDataSource,
+		NewDomainsDataSource,
+		NewApiKeyDataSource,
+		NewApiKeysDataSource,
+		NewWebhookDataSource,
+		NewWebhooksDataSource,
+	}
 }
 
 func New(version string) func() provider.Provider {

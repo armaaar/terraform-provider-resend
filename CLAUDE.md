@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Terraform provider for [Resend](https://resend.com) (transactional email). Built on the **Terraform Plugin Framework** (`hashicorp/terraform-plugin-framework`), not the older Plugin SDK v2. Forked from `chronark/terraform-provider-resend`; published to the Terraform Registry as `registry.terraform.io/armaaar/resend`. Wraps `github.com/resend/resend-go/v3`, with a small in-tree HTTP supplement (`internal/resendx`) for the handful of REST fields the SDK still omits.
 
-Currently exposes three resources and no data sources: `resend_domain`, `resend_api_key`, `resend_webhook`.
+Resources: `resend_domain`, `resend_api_key`, `resend_webhook`. Data sources: matching singular (`data.resend_domain`, `data.resend_api_key`, `data.resend_webhook`) and plural list forms (`data.resend_domains`, `data.resend_api_keys`, `data.resend_webhooks`).
 
 ## Common commands
 
@@ -42,6 +42,7 @@ go run . -debug
 - [internal/provider/domain_resource.go](internal/provider/domain_resource.go) — `resend_domain`. Records list, capabilities, tls, custom_return_path, tracking flags. Update is implemented; immutable attributes use `RequiresReplace()`. The `applyExtState` helper merges resendx-supplied fields on Create/Read/Update.
 - [internal/provider/api_key_resource.go](internal/provider/api_key_resource.go) — `resend_api_key`. Read paginates `ApiKeys.ListWithOptions(ctx, &resend.ListOptions{After: cursor})` until the matching id is found or `HasMore` is false; missing → `RemoveResource`.
 - [internal/provider/webhook_resource.go](internal/provider/webhook_resource.go) — `resend_webhook`. Full CRUD via the SDK; `signing_secret` round-trips because v3.6.0's `Webhook` struct exposes it on Get. 404 detection uses string-matching on the SDK's untyped errors.
+- [internal/provider/*_data_source.go](internal/provider/) — six data sources (singular + plural for each resource type). Singular forms hit the SDK's GET endpoint where one exists (domain, webhook); api_key paginates ListWithOptions because Resend has no GET /api-keys/:id. All plural forms paginate. The domain data source reuses `recordsToList` and `capabilitiesToObject` helpers from the resource and pulls `tls` + `capabilities` via resendx for parity with the resource's Read path.
 - [internal/resendx/](internal/resendx/) — minimal HTTP client wrapping `https://api.resend.com`. Sets `Authorization: Bearer …`, `User-Agent: terraform-provider-resend/<version>`, and decodes 4xx/5xx into `*APIError`. Provides `GetDomain` (returns the supplemental `tls` + `capabilities` fields) and `IsNotFound(err)`.
 - [tools/tools.go](tools/tools.go) — Go tools-pattern stub (`//go:build tools`) that pins `tfplugindocs` as a build dependency so `go generate` resolves it.
 - [docs/](docs/) — **generated** from resource `MarkdownDescription` fields plus example `.tf` files under [examples/resources/](examples/resources/) and [examples/provider/](examples/provider/). Don't hand-edit `docs/`; edit the schema descriptions or examples and re-run `go generate`. CI's `generate` job fails the build if `docs/` drifts from sources.

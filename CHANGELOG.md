@@ -17,6 +17,7 @@ Initial fork release. Forked from `chronark/terraform-provider-resend` and subst
 - `resend_domain.region` accepts `ap-northeast-1` in addition to the previously-documented regions.
 - New `resend_webhook` resource — full CRUD plus `signing_secret` round-trip on Read and Import.
 - Added paginated `Read` to `resend_api_key` so out-of-band deletion is reflected at the next refresh.
+- New data sources mirroring every resource: `data.resend_domain` / `data.resend_domains` / `data.resend_api_key` / `data.resend_api_keys` / `data.resend_webhook` / `data.resend_webhooks`. Singular forms look up by ID; plural forms paginate the list endpoint. The domain singular includes the supplemental `tls` + `capabilities` from `resendx`; the webhook singular includes `signing_secret`.
 
 ### Fixes
 
