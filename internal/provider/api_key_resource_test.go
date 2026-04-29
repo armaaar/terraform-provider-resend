@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package provider
 
 import (
@@ -8,28 +11,37 @@ import (
 
 func TestAccApiKeyResource(t *testing.T) {
 	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
-			// Create and Read testing
 			{
 				Config: providerConfig + `
 resource "resend_api_key" "test" {
-  name = "terraform"
+  name = "tf-acc-test"
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("resend_api_key.test", "name", "terraform"),
+					resource.TestCheckResourceAttr("resend_api_key.test", "name", "tf-acc-test"),
 					resource.TestCheckResourceAttrSet("resend_api_key.test", "id"),
 					resource.TestCheckResourceAttrSet("resend_api_key.test", "token"),
 				),
 			},
-			// ImportState testing
+			// Refresh-only step: exercises Read on its own and asserts no diff.
+			// This is what would have caught the previous no-op Read in CI.
 			{
-				ResourceName:      "resend_api_key.test",
-				ImportState:       true,
-				ImportStateVerify: false,
+				RefreshState: true,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("resend_api_key.test", "name", "tf-acc-test"),
+				),
 			},
-			// Delete testing automatically occurs in TestCase
+			// Import — token cannot round-trip (Resend never re-exposes it), so
+			// ImportStateVerify is off.
+			{
+				ResourceName:            "resend_api_key.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"token"},
+			},
 		},
 	})
 }
