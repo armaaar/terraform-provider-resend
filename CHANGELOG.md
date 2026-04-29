@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 — Unreleased
+## 1.0.0 — 2026-04-29
 
 Initial fork release. Forked from `chronark/terraform-provider-resend` and substantially overhauled.
 
