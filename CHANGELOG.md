@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 — 2026-06-09
+
+### Fixes
+
+- **`resend_domain` no longer reports phantom drift on refresh** for `open_tracking` / `click_tracking`. Resend's `GET /domains/:id` has been observed in production to omit these fields; the SDK's `Domain` struct decodes a missing field into the `bool` zero value (`false`), which previously clobbered a true-in-config value on every refresh. The cascade was worse than the diff itself — because the resource was marked for update, its Computed attributes (`records`, `status`, `capabilities`) became `(known after apply)`, breaking downstream consumers that did `for_each = { for r in resend_domain.x.records : … }`. The provider now decodes the supplemental view of these fields into `*bool` via `resendx`, distinguishes "absent" from "explicit false", and falls back to the prior state (or planned) value when neither source can authoritatively answer. The `resend_domain` data source got the same treatment.
+
 ## 1.0.0 — 2026-04-29
 
 Initial fork release. Forked from `chronark/terraform-provider-resend` and substantially overhauled.
