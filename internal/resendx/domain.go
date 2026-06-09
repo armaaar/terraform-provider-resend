@@ -13,12 +13,19 @@ type Capabilities struct {
 	Receiving string `json:"receiving"`
 }
 
-// Domain mirrors the subset of GET /domains/:id fields that the official SDK
-// omits from its Domain struct. Other fields (name, region, records, …) are
-// already covered by resend-go/v3 and intentionally left out here.
+// Domain mirrors the subset of GET /domains/:id fields that we need a separate
+// view of from the official SDK. `tls` and `capabilities` are not on the SDK's
+// Domain at all. `open_tracking`/`click_tracking` ARE on the SDK's Domain — but
+// as plain `bool`, so a response that omits the field is indistinguishable
+// from one that returns `false`, which causes permanent phantom drift on
+// refresh for domains that actually have tracking enabled. Decoding into
+// `*bool` here keeps "field absent" distinct from "field is false" so the
+// provider can fall back to prior state instead of clobbering it.
 type Domain struct {
-	Tls          string        `json:"tls,omitempty"`
-	Capabilities *Capabilities `json:"capabilities,omitempty"`
+	Tls           string        `json:"tls,omitempty"`
+	Capabilities  *Capabilities `json:"capabilities,omitempty"`
+	OpenTracking  *bool         `json:"open_tracking,omitempty"`
+	ClickTracking *bool         `json:"click_tracking,omitempty"`
 }
 
 // GetDomain fetches the supplemental fields for a domain.

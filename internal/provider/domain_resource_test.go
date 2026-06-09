@@ -76,6 +76,32 @@ resource "resend_domain" "test" {
 					resource.TestCheckResourceAttr("resend_domain.test", "tls", "enforced"),
 				),
 			},
+			// Step 2b: refresh-only re-plan against the SAME config from step 2.
+			// Regression guard for the phantom-drift bug where Read overwrote
+			// open_tracking/click_tracking with `false` whenever Resend's GET
+			// response omitted those fields, producing a permanent "false ->
+			// true" diff that also forced computed attrs (records, status,
+			// capabilities) to "(known after apply)" and broke downstream
+			// for_each consumers. With the fix in place this step must report
+			// an empty plan.
+			{
+				Config: providerConfig + fmt.Sprintf(`
+resource "resend_domain" "test" {
+  name               = %[1]q
+  region             = "us-east-1"
+  open_tracking      = true
+  click_tracking     = true
+  tracking_subdomain = "track"
+  tls                = "enforced"
+}
+`, name),
+				RefreshState:       true,
+				ExpectNonEmptyPlan: false,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("resend_domain.test", "open_tracking", "true"),
+					resource.TestCheckResourceAttr("resend_domain.test", "click_tracking", "true"),
+				),
+			},
 			// Step 3: flip the booleans back to false. This specifically exercises
 			// the SDK's SetOpenTracking(false)/SetClickTracking(false) MarshalJSON
 			// path; without the setters the false values would be dropped by

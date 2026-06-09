@@ -253,15 +253,48 @@ func capabilitiesToObject(c *resendx.Capabilities) (types.Object, diag.Diagnosti
 	})
 }
 
-// applyExtState merges the resendx-supplied fields (capabilities + tls) into
-// the model. Failure to fetch leaves the existing values intact and surfaces
-// a warning rather than blocking the apply — these are read-only enrichments.
+// resolveTrackingBool picks the most authoritative value for an
+// open_tracking/click_tracking attribute. Resend's GET /domains/:id has been
+// observed in production to omit these fields; the SDK decodes a missing
+// field as the bool zero value (false), which would clobber a true-in-config
+// value on refresh and produce permanent phantom drift. Precedence:
+//  1. the resendx-decoded pointer if non-nil (unambiguous: the API sent it).
+//  2. the SDK's bool if true (a true cannot be a missing-field artifact).
+//  3. the prior known value — state on Read, plan on Create/Update.
+//  4. false, as the documented Resend default.
+func resolveTrackingBool(prior types.Bool, sdkValue bool, extValue *bool) types.Bool {
+	if extValue != nil {
+		return types.BoolValue(*extValue)
+	}
+	if sdkValue {
+		return types.BoolValue(true)
+	}
+	if !prior.IsNull() && !prior.IsUnknown() {
+		return prior
+	}
+	return types.BoolValue(false)
+}
+
+// applyExtState merges the resendx-supplied fields (capabilities, tls,
+// open_tracking, click_tracking) into the model. Failure to fetch leaves the
+// existing values intact and surfaces a warning rather than blocking the
+// apply — these are read-only enrichments.
+//
+// sdkOpenTracking/sdkClickTracking are the values the SDK just decoded from
+// its own GET /domains/:id call; priorOpenTracking/priorClickTracking are the
+// values the provider should fall back to when neither source can
+// authoritatively answer (state on Read, plan on Create/Update).
 //
 // Defaults Unknown -> null up front so even when resendx fails or Resend
 // returns no value (a fresh domain has no TLS policy), the state is always
 // "known". Without this, an Optional+Computed field whose plan value is
 // Unknown would still be Unknown after apply and the framework rejects it.
-func (r *DomainResource) applyExtState(ctx context.Context, data *DomainResourceModel) diag.Diagnostics {
+func (r *DomainResource) applyExtState(
+	ctx context.Context,
+	data *DomainResourceModel,
+	sdkOpenTracking, sdkClickTracking bool,
+	priorOpenTracking, priorClickTracking types.Bool,
+) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	if data.Tls.IsUnknown() {
@@ -277,6 +310,11 @@ func (r *DomainResource) applyExtState(ctx context.Context, data *DomainResource
 			"Could not read supplemental domain fields",
 			fmt.Sprintf("Resend's REST API returned an error when fetching capabilities/tls for domain %s: %s. The provider will retain the previous values for these fields.", data.Id.ValueString(), err),
 		)
+		// Without resendx data we still resolve tracking from the SDK +
+		// prior values so refresh never overwrites a true with a phantom
+		// false when the SDK alone can't tell them apart.
+		data.OpenTracking = resolveTrackingBool(priorOpenTracking, sdkOpenTracking, nil)
+		data.ClickTracking = resolveTrackingBool(priorClickTracking, sdkClickTracking, nil)
 		return diags
 	}
 	if ext.Tls != "" {
@@ -285,6 +323,8 @@ func (r *DomainResource) applyExtState(ctx context.Context, data *DomainResource
 	caps, capsDiags := capabilitiesToObject(ext.Capabilities)
 	diags.Append(capsDiags...)
 	data.Capabilities = caps
+	data.OpenTracking = resolveTrackingBool(priorOpenTracking, sdkOpenTracking, ext.OpenTracking)
+	data.ClickTracking = resolveTrackingBool(priorClickTracking, sdkClickTracking, ext.ClickTracking)
 	return diags
 }
 
@@ -351,12 +391,15 @@ func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
+	// Capture the planned tracking values BEFORE the SDK Get so applyExtState
+	// has a known-good fallback if Resend's API omits them from the response.
+	priorOpenTracking := data.OpenTracking
+	priorClickTracking := data.ClickTracking
+
 	data.Name = types.StringValue(domain.Name)
 	data.Region = types.StringValue(domain.Region)
 	data.CreatedAt = types.StringValue(domain.CreatedAt)
 	data.Status = types.StringValue(domain.Status)
-	data.OpenTracking = types.BoolValue(domain.OpenTracking)
-	data.ClickTracking = types.BoolValue(domain.ClickTracking)
 	data.TrackingSubdomain = types.StringValue(domain.TrackingSubdomain)
 
 	recs, recsDiags := recordsToList(ctx, domain.Records)
@@ -366,8 +409,10 @@ func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 	data.Records = recs
 
-	// Pull capabilities and tls from the REST API — the SDK omits both.
-	resp.Diagnostics.Append(r.applyExtState(ctx, &data)...)
+	// Pull capabilities, tls, and tracking flags from the REST API — the SDK
+	// omits capabilities/tls entirely and silently zeroes the tracking flags
+	// when Resend's response omits them.
+	resp.Diagnostics.Append(r.applyExtState(ctx, &data, domain.OpenTracking, domain.ClickTracking, priorOpenTracking, priorClickTracking)...)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -380,6 +425,9 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
+	priorOpenTracking := data.OpenTracking
+	priorClickTracking := data.ClickTracking
+
 	domain, err := r.client.Domains.GetWithContext(ctx, data.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read domain, got error: %s", err))
@@ -390,8 +438,6 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 	data.Region = types.StringValue(domain.Region)
 	data.CreatedAt = types.StringValue(domain.CreatedAt)
 	data.Status = types.StringValue(domain.Status)
-	data.OpenTracking = types.BoolValue(domain.OpenTracking)
-	data.ClickTracking = types.BoolValue(domain.ClickTracking)
 	data.TrackingSubdomain = types.StringValue(domain.TrackingSubdomain)
 
 	recs, recsDiags := recordsToList(ctx, domain.Records)
@@ -401,7 +447,7 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 	}
 	data.Records = recs
 
-	resp.Diagnostics.Append(r.applyExtState(ctx, &data)...)
+	resp.Diagnostics.Append(r.applyExtState(ctx, &data, domain.OpenTracking, domain.ClickTracking, priorOpenTracking, priorClickTracking)...)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -463,12 +509,13 @@ func (r *DomainResource) Update(ctx context.Context, req resource.UpdateRequest,
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read domain after update, got error: %s", err))
 		return
 	}
+	priorOpenTracking := data.OpenTracking
+	priorClickTracking := data.ClickTracking
+
 	data.Name = types.StringValue(domain.Name)
 	data.Region = types.StringValue(domain.Region)
 	data.CreatedAt = types.StringValue(domain.CreatedAt)
 	data.Status = types.StringValue(domain.Status)
-	data.OpenTracking = types.BoolValue(domain.OpenTracking)
-	data.ClickTracking = types.BoolValue(domain.ClickTracking)
 	data.TrackingSubdomain = types.StringValue(domain.TrackingSubdomain)
 
 	recs, recsDiags := recordsToList(ctx, domain.Records)
@@ -478,7 +525,7 @@ func (r *DomainResource) Update(ctx context.Context, req resource.UpdateRequest,
 	}
 	data.Records = recs
 
-	resp.Diagnostics.Append(r.applyExtState(ctx, &data)...)
+	resp.Diagnostics.Append(r.applyExtState(ctx, &data, domain.OpenTracking, domain.ClickTracking, priorOpenTracking, priorClickTracking)...)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

@@ -144,8 +144,6 @@ func (d *DomainDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	data.Region = types.StringValue(domain.Region)
 	data.CreatedAt = types.StringValue(domain.CreatedAt)
 	data.Status = types.StringValue(domain.Status)
-	data.OpenTracking = types.BoolValue(domain.OpenTracking)
-	data.ClickTracking = types.BoolValue(domain.ClickTracking)
 	data.TrackingSubdomain = types.StringValue(domain.TrackingSubdomain)
 
 	recs, recsDiags := recordsToList(ctx, domain.Records)
@@ -155,9 +153,14 @@ func (d *DomainDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	}
 	data.Records = recs
 
-	// Pull tls + capabilities from the REST API — the SDK omits them.
+	// Pull tls, capabilities, and the tracking flags from the REST API — the
+	// SDK omits tls/capabilities entirely and silently zeroes the tracking
+	// flags when Resend's GET response omits them, which would otherwise
+	// surface as `false` here regardless of the domain's real configuration.
 	data.Tls = types.StringNull()
 	data.Capabilities = types.ObjectNull(capabilitiesAttrTypes())
+	data.OpenTracking = resolveTrackingBool(types.BoolNull(), domain.OpenTracking, nil)
+	data.ClickTracking = resolveTrackingBool(types.BoolNull(), domain.ClickTracking, nil)
 	ext, err := d.ext.GetDomain(ctx, data.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddWarning(
@@ -171,6 +174,8 @@ func (d *DomainDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		caps, capsDiags := capabilitiesToObject(ext.Capabilities)
 		resp.Diagnostics.Append(capsDiags...)
 		data.Capabilities = caps
+		data.OpenTracking = resolveTrackingBool(types.BoolNull(), domain.OpenTracking, ext.OpenTracking)
+		data.ClickTracking = resolveTrackingBool(types.BoolNull(), domain.ClickTracking, ext.ClickTracking)
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)

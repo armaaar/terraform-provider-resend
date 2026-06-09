@@ -31,7 +31,9 @@ func TestClient_GetDomain_OK(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"id": "dom_123",
 			"tls": "enforced",
-			"capabilities": { "sending": "enabled", "receiving": "disabled" }
+			"capabilities": { "sending": "enabled", "receiving": "disabled" },
+			"open_tracking": true,
+			"click_tracking": false
 		}`))
 	})
 
@@ -41,6 +43,28 @@ func TestClient_GetDomain_OK(t *testing.T) {
 	require.NotNil(t, d.Capabilities)
 	require.Equal(t, "enabled", d.Capabilities.Sending)
 	require.Equal(t, "disabled", d.Capabilities.Receiving)
+	require.NotNil(t, d.OpenTracking)
+	require.True(t, *d.OpenTracking)
+	require.NotNil(t, d.ClickTracking)
+	require.False(t, *d.ClickTracking)
+}
+
+// TestClient_GetDomain_TrackingFieldsAbsent reproduces the production
+// scenario where Resend's GET /domains/:id payload omits open_tracking and
+// click_tracking. Decoding into *bool must yield nil pointers so the caller
+// can distinguish "absent" from "explicit false" and avoid clobbering a
+// previously-true state value with a phantom false on refresh.
+func TestClient_GetDomain_TrackingFieldsAbsent(t *testing.T) {
+	t.Parallel()
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"dom_123","tls":"enforced"}`))
+	})
+
+	d, err := c.GetDomain(context.Background(), "dom_123")
+	require.NoError(t, err)
+	require.Nil(t, d.OpenTracking)
+	require.Nil(t, d.ClickTracking)
 }
 
 func TestClient_GetDomain_NotFound(t *testing.T) {
